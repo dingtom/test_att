@@ -37,8 +37,8 @@ torch.cuda.manual_seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-def lr_scheduler_new(optimizer, num_iter):
-    lr = 0.0005 * min(0.0002*num_iter,np.exp(-0.00005*num_iter))
+def lr_scheduler_new(optimizer, num_iter):  # 动态调整学习率
+    lr = 0.0005 * min(0.0002*num_iter, np.exp(-0.00005*num_iter))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     writer.add_scalar('Learning Rate', lr, num_iter)
@@ -66,19 +66,8 @@ config = load_config(args.config_filename)
 
 #Setting up the model
 nt = config["model"]["nt"]
-nb_layers = config["model"]["nb_of_layers"]
-(n_channels, im_height, im_width) = tuple(config["model"]["input_shape"])
+(n_channels, im_height, im_width) = tuple(config["model"]["input_shape"])  # [2, 128, 128] # n_channels, im_hegiht, im_width
 input_shape = (im_height, im_width, n_channels)
-stack_sizes = (n_channels, *tuple(config["model"]["stack_sizes"]))
-R_stack_sizes = stack_sizes
-A_filt_sizes = tuple(config["model"]["A_filt_sizes"])
-Ahat_filt_sizes = tuple(config["model"]["Ahat_filt_sizes"])
-R_filt_sizes = tuple(config["model"]["R_filt_sizes"])
-layer_type = config["model"]["type_of_all_layers"]
-attention_horizon = config["model"]["attention_horizon"]
-Nh = config["model"]["Nh"]
-dk = config["model"]["key_query_dimension"]
-dv = config["model"]["value_dimension"]
 
 #Setting up training
 model_name = config["training"]["model_name"]
@@ -86,27 +75,39 @@ data_directory = config["training"]["dataset_path"]
 nb_epoch = config["training"]["nb_epochs"]
 batch_size = config["training"]["batch_size"]
 samples_per_epoch =  config["training"]["samples_per_epoch"]
-N_seq_val = config["training"]["N_seq_val"]
+N_seq_val = config["training"]["N_seq_val"]  # ????????????
 
-#Loading the dataset
-train_file = os.path.join(data_directory, 'X_train.hkl')
-train_sources = os.path.join(data_directory, 'sources_train.hkl')
-val_file = os.path.join(data_directory, 'X_val.hkl')
-val_sources = os.path.join(data_directory, 'sources_val.hkl')
-kitti_train = KITTI(train_file, train_sources, nt)
-kitti_val = KITTI(val_file, val_sources, nt)
+#Loading the dataset  生成训练数据
+# train_file = os.path.join(data_directory, 'X_train.hkl')   # 训练数据文件路径
+# train_sources = os.path.join(data_directory, 'sources_train.hkl')   # 训练数据文件路径
+# val_file = os.path.join(data_directory, 'X_val.hkl')   # 训练数据文件路径
+# val_sources = os.path.join(data_directory, 'sources_val.hkl')   # 训练数据文件路径
+# kitti_train = KITTI(train_file, train_sources, nt)   # 生成训练数据 
+# kitti_val = KITTI(val_file, val_sources, nt)  # 生成验证数据
 
-#Setting up loss weights
-layer_loss_weights = Variable(torch.FloatTensor([[1.], *[[0.]]*(nb_layers-1)])).cuda()
+# Setting up loss weights
+layer_loss_weights = Variable(torch.FloatTensor([[1.], *[[0.]]*(config["model"]["nb_of_layers"]-1)])).cuda()
 time_loss_weights = 1./ (nt - 5) * torch.ones(nt,1).cuda()
 time_loss_weights[0:5] = 0
 time_loss_weights = Variable(time_loss_weights).cuda()
 
 print("Training: {}_t+1".format(model_name))
 writer = SummaryWriter("../trained_models/{}/{}_t+1_tensorboard".format(model_name, model_name))
-model = Model(layer_type, stack_sizes, R_stack_sizes,
-                            A_filt_sizes, Ahat_filt_sizes, R_filt_sizes, attention_horizon,
-                            dk, dv, Nh, im_width, im_height, positional_encoding= True, forget_bias=1.0)
+model = Model(layer_list=config["model"]["type_of_all_layers"],  #   [ConvLSTM, ConvLSTM, SAAConvLSTM, SAAConvLSTM]
+            stack_sizes=(n_channels, *tuple(config["model"]["stack_sizes"])),  # [48, 96, 192] # same as R_stack_sizes
+            R_stack_sizes=(n_channels, *tuple(config["model"]["stack_sizes"])),  # [48, 96, 192] # same as R_stack_sizes
+            A_filt_sizes=tuple(config["model"]["A_filt_sizes"]),   # [3, 3, 3]
+            Ahat_filt_sizes=tuple(config["model"]["Ahat_filt_sizes"]),   # [3, 3, 3]
+            R_filt_sizes=tuple(config["model"]["R_filt_sizes"]),   # [3, 3, 3]
+            # ?????????????????????????变量一样吗
+            num_past_frames=config["model"]["attention_horizon"],  # 4  
+            dk=config["model"]["key_query_dimension"],    # 250
+            dv=config["model"]["value_dimension"],   # 250
+            Nh=config["model"]["Nh"],   # 4
+            width=im_width,  # 128
+            height=im_height,   # 128
+            positional_encoding=True, 
+            forget_bias=1.0)
 
 torch.cuda.empty_cache()
 if torch.cuda.is_available():
@@ -123,7 +124,7 @@ for epoch in range(nb_epoch):
     loss_per_epoch = 0
     iter_per_epoch = 0
     for i, inputs in enumerate(train_loader):
-        if(i<samples_per_epoch):
+        if i < samples_per_epoch:
             optimizer = lr_scheduler_new(optimizer, num_iter)
             inputs = inputs.permute(0, 1, 4, 2, 3)
             inputs = inputs.cuda()
@@ -136,7 +137,7 @@ for epoch in range(nb_epoch):
             optimizer.zero_grad()
             errors.backward()
 
-            if(num_iter%20==0):
+            if num_iter % 20 == 0:
                 gradient_vis(model.named_parameters(), num_iter)
             optimizer.step()
 
@@ -152,7 +153,7 @@ for epoch in range(nb_epoch):
 
             with torch.no_grad():
                 for j, inputs in enumerate(val_loader):
-                    if(j<N_seq_val):
+                    if j < N_seq_val:
                         inputs = inputs.permute(0, 1, 4, 2, 3) # batch x time_steps x channel x width x height
                         inputs = inputs.cuda()
                         errors = model(inputs) # batch x n_layers x nt

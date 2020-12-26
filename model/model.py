@@ -11,66 +11,89 @@ from model.TAAConvLSTMCell import TAAConvLSTMCell
 from model.SAAConvLSTMCell import SAAConvLSTMCell
 
 class Model(nn.Module):
-    def __init__(self, layer_type, stack_sizes, R_stack_sizes, A_filt_sizes, Ahat_filt_sizes, R_filt_sizes, num_past_frames, dk, dv, Nh, width, height, pixel_max=1.,
-                error_activation=nn.ReLU(), A_activation=nn.ReLU(), LSTM_activation=nn.Tanh(), LSTM_inner_activation='hard_sigmoid',
-                output_mode='error', extrap_start_time=None, attention_input_mode='representation', positional_encoding = True, forget_bias= 1.0):
+    def __init__(self, 
+    layer_list, 
+    stack_sizes, 
+    R_stack_sizes, 
+    A_filt_sizes, 
+    Ahat_filt_sizes,
+    R_filt_sizes, 
+    num_past_frames,  #  ？？？？？？？？？？？？？？？？？？传入attention_horizon
+    dk, dv, Nh, 
+    width,  height, 
+    error_activation=nn.ReLU(), A_activation=nn.ReLU(), LSTM_activation=nn.Tanh(), 
+    LSTM_inner_activation='hard_sigmoid', output_mode='error', 
+    extrap_start_time=None, attention_input_mode='representation', 
+    positional_encoding=True, pixel_max=1., forget_bias=1.0):
 
         '''
         PredNet with TAA/SAAConvLSTM mechanism.
         Extended PredNet baseline implementation - Lotter 2016.
-
-        # Arguments
-            stack_sizes: number of channels in targets (A) and predictions (Ahat) in each layer of the architecture.
-                Length is the number of layers in the architecture.
-            R_stack_sizes: number of channels in the representation (R) modules.
-            A_filt_sizes: filter sizes for the target (A) modules.
-            Ahat_filt_sizes: filter sizes for the prediction (Ahat) modules.
-            R_filt_sizes: filter sizes for the representation (R) modules.
-            num_past_frames: number of past frames in the attention calculation (not used, for compatibility with TAAConvLSTM).
-            dk: ratio of number of channels in the key/query to number of channels in the output at each layer
-            dv: ratio of number of channels in the value to number of channels in the output at each layer
-            width: width of the image
-            height: height of the image
-            pixel_max: the maximum pixel value.
-            error_activation: activation function for the error (E) units.
-            A_activation: activation function for the target (A) and prediction (A_hat) units.
-            LSTM_activation: activation function for the cell and hidden states of the LSTM.
-            LSTM_inner_activation: activation function for the gates in the LSTM.
-            output_mode: either 'error', 'prediction', 'all' or layer specification (ex. R2, see below).
-                Controls what is outputted by the PredNet.
-                If 'error', the mean response of the error (E) units of each layer will be outputted.
-                    That is, the output shape will be (batch_size, nb_layers).
-                If 'prediction', the frame prediction will be outputted.
-            extrap_start_time: time step for which model will start extrapolating.
-                Starting at this time step, the prediction from the previous time step will be treated as the "actual".
+         !!!!!!!!!!!!!!!useless!!!!!!!
+        error_activation: activation function for the error (E) units.
+        A_activation: activation function for the target (A) and prediction (A_hat) units.
+        LSTM_activation: activation function for the cell and hidden states of the LSTM.
         '''
-
         super(Model, self).__init__()
-        self.stack_sizes = stack_sizes
-        self.layer_type = layer_type
-        self.nb_layers = len(stack_sizes)
-        self.R_stack_sizes = R_stack_sizes
-        self.A_filt_sizes = A_filt_sizes
-        self.Ahat_filt_sizes = Ahat_filt_sizes
-        self.R_filt_sizes = R_filt_sizes
-        self.pixel_max = pixel_max
-        self.LSTM_inner_activation = LSTM_inner_activation
-        self.output_mode = output_mode
-        self.extrap_start_time = extrap_start_time
-        self.num_past_frames = num_past_frames
-        self.dk = dk
-        self.dv = dv
-        self.Nh = Nh
+        self.stack_sizes = stack_sizes   # (2, 48, 96, 192)
+        # (n_channels, *tuple(config["model"]["stack_sizes"])),  # [48, 96, 192] # same as R_stack_sizes
+        # stack_sizes: number of channels in targets (A) and predictions (Ahat) in each layer of the architecture.
+        # Length is the number of layers in the architecture.
+        # 体系结构每一层中targets（A）和predictions（Ahat）中的通道数。 长度是体系结构中的层数。
+        self.layer_list = layer_list  #   [ConvLSTM, ConvLSTM, SAAConvLSTM, SAAConvLSTM] 
+        self.nb_layers = len(stack_sizes)  # 4
+        self.R_stack_sizes = R_stack_sizes   # [48, 96, 192]
+        # R_stack_sizes: number of channels in the representation (R) modules.
+        #  representation（R）模块中的通道数。
+        self.A_filt_sizes = A_filt_sizes  # [3, 3, 3]
+        # A_filt_sizes: filter sizes for the target (A) modules.
+        #  targets（A）模块的过滤器尺寸。
+        self.Ahat_filt_sizes = Ahat_filt_sizes  # [3, 3, 3]
+        # Ahat_filt_sizes: filter sizes for the prediction (Ahat) modules.
+        #  predictions（Ahat）模块的过滤器大小。
+        self.R_filt_sizes = R_filt_sizes # [3, 3, 3]
+        # R_filt_sizes: filter sizes for the representation (R) modules. 
+        #  representation（R）模块的过滤器大小。
+        self.pixel_max = pixel_max  
+        #  最大像素值。
+        self.LSTM_inner_activation = LSTM_inner_activation  
+        # LSTM_inner_activation: activation function for the gates in the LSTM.
+        #  LSTM中门的激活功能。
+        self.output_mode = output_mode  
+        # output_mode: either 'error', 'prediction', 'all' or layer specification (ex. R2, see below).
+        # Controls what is outputted by the PredNet.
+        # If 'error', the mean response of the error (E) units of each layer will be outputted.
+        #            That is, the output shape will be (batch_size, nb_layers).
+        # If 'prediction', the frame prediction will be outputted.
+        
+        # “error”，“predictions”，“all”或指定的层（例如R2，请参见下文）。 控制PredNet输出的内容。 
+        # 如果为“error”，则将输出每层 error（E）单元的平均响应。 也就是说，输出形状将为（batch_size，nb_layers）。 
+        # 如果为“predictions”，则将输出帧predictions。
+        self.extrap_start_time = extrap_start_time  # None
+        # extrap_start_time: time step for which model will start extrapolating.
+        #         Starting at this time step, the prediction from the previous time step will be treated as the "actual".
+        # 模型将开始外推的时间点。从这个时间步开始，上一个时间步的predictions将被视为“实际”。
+        self.num_past_frames = num_past_frames   #  4
+        #  num_past_frames: number of past frames in the attention calculation (not used, for compatibility with TAAConvLSTM).
+        #  attention 计算中过去的帧数（！！！！！！！！！不使用，为了与TAAConvLSTM兼容）。
+        self.dk = dk  
+        # dk: ratio of number of channels in the key/query to number of channels in the output at each layer 
+        # 每一层的key/query的通道数与每层输出的通道数之比
+        self.dv = dv  
+        #  dv: ratio of number of channels in the value to number of channels in the output at each layer 
+        #  dv：value中的通道数与每层输出中的通道数之比
+        self.Nh = Nh  
+        # 
         self.width = width
         self.height = height
-        self.attention_input_mode = attention_input_mode
-        self.positional_encoding = positional_encoding
-        self.forget_bias = forget_bias
+        self.attention_input_mode = attention_input_mode  #  representation  传入cell
+        self.positional_encoding = positional_encoding  
+        self.forget_bias = forget_bias  # 1.0
 
         default_output_modes = ['prediction', 'error']
         layer_output_modes = [layer + str(n) for n in range(self.nb_layers) for layer in ['R', 'E', 'A', 'Ahat']]
 
-        if(self.output_mode in layer_output_modes):
+        if self.output_mode in layer_output_modes:
             self.output_layer_type = self.output_mode[:-1]
             self.output_layer_num = int(self.output_mode[-1])
         else:
@@ -82,48 +105,73 @@ class Model(nn.Module):
         self.column_axis = -1
 
         for l in range(self.nb_layers):
-
-            if l<self.nb_layers-1:
-                if self.layer_type[l] == 'ConvLSTM':
-                    cell = ConvLSTMCell(3 * self.stack_sizes[l] + self.R_stack_sizes[l+1], self.R_stack_sizes[l], self.R_filt_sizes[l])
+            if l < self.nb_layers - 1:  # layer没添加完
+                if self.layer_list[l] == 'ConvLSTM':
+                    cell = ConvLSTMCell(3*self.stack_sizes[l]+self.R_stack_sizes[l+1], 
+                    self.R_stack_sizes[l], 
+                    self.R_filt_sizes[l])
                     setattr(self, 'cell{}'.format(l), cell)
-                elif self.layer_type[l] == 'TAAConvLSTM':
-                    cell = TAAConvLSTMCell(2 * self.stack_sizes[l] + self.R_stack_sizes[l+1], self.R_stack_sizes[l], self.R_filt_sizes[l],
-                                            self.num_past_frames, self.dk, self.dv, self.Nh, width, height, self.attention_input_mode,
-                                            self.positional_encoding, self.forget_bias)
+                elif self.layer_list[l] == 'TAAConvLSTM':
+                    cell = TAAConvLSTMCell(2*self.stack_sizes[l]+self.R_stack_sizes[l+1], 
+                    self.R_stack_sizes[l], 
+                    self.R_filt_sizes[l],
+                    self.num_past_frames, 
+                    self.dk, self.dv, self.Nh, 
+                    width, height, 
+                    self.attention_input_mode,
+                    self.positional_encoding, 
+                    self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
-                elif self.layer_type[l] == 'SAAConvLSTM':
-                    cell = SAAConvLSTMCell(2 * self.stack_sizes[l] + self.R_stack_sizes[l+1], self.R_stack_sizes[l], self.R_filt_sizes[l],
-                                                self.num_past_frames, self.dk, self.dv, self.Nh, width, height, self.attention_input_mode,
-                                                self.positional_encoding, self.forget_bias)
+                elif self.layer_list[l] == 'SAAConvLSTM':
+                    cell = SAAConvLSTMCell(2*self.stack_sizes[l]+self.R_stack_sizes[l+1],
+                     self.R_stack_sizes[l], 
+                     self.R_filt_sizes[l],
+                     self.num_past_frames, 
+                     self.dk, self.dv, self.Nh, 
+                     width, height, 
+                     self.attention_input_mode,
+                     self.positional_encoding, 
+                     self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 else:
                     print("Error. Layer type not recognized.")
             else: #l==self.nb_layers
-                if self.layer_type[l] == 'ConvLSTM':
-                    cell = ConvLSTMCell(3 * self.stack_sizes[l], self.R_stack_sizes[l], self.R_filt_sizes[l])
+                if self.layer_list[l] == 'ConvLSTM':
+                    cell = ConvLSTMCell(3*self.stack_sizes[l], 
+                    self.R_stack_sizes[l], 
+                    self.R_filt_sizes[l])
                     setattr(self, 'cell{}'.format(l), cell)
-                elif self.layer_type[l] == 'TAAConvLSTM':
-                    cell = TAAConvLSTMCell(2 * self.stack_sizes[l], self.R_stack_sizes[l], self.R_filt_sizes[l],
-                                            self.num_past_frames, self.dk, self.dv, self.Nh, width, height,
-                                            self.attention_input_mode, self.positional_encoding, self.forget_bias)
+                elif self.layer_list[l] == 'TAAConvLSTM':
+                    cell = TAAConvLSTMCell(2*self.stack_sizes[l], 
+                    self.R_stack_sizes[l], 
+                    self.R_filt_sizes[l],
+                    self.num_past_frames, 
+                    self.dk, self.dv, self.Nh, 
+                    width, height,
+                    self.attention_input_mode, 
+                    self.positional_encoding, 
+                    self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
-                elif self.layer_type[l] == 'SAAConvLSTM':
-                    cell = SAAConvLSTMCell(2 * self.stack_sizes[l], self.R_stack_sizes[l], self.R_filt_sizes[l],
-                                                self.num_past_frames, self.dk, self.dv, self.Nh, width, height,
-                                                self.attention_input_mode, self.positional_encoding, self.forget_bias)
+                elif self.layer_list[l] == 'SAAConvLSTM':
+                    cell = SAAConvLSTMCell(2*self.stack_sizes[l], 
+                    self.R_stack_sizes[l], 
+                    self.R_filt_sizes[l],
+                    self.num_past_frames, 
+                    self.dk, self.dv, self.Nh, 
+                    width, height,
+                    self.attention_input_mode, 
+                    self.positional_encoding, 
+                    self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 else:
                     print("Error. Layer type not recognized.")
-
             #Creating prediction A_hat from the representation
-            conv = nn.Sequential(nn.Conv2d(self.R_stack_sizes[l],self.stack_sizes[l], self.Ahat_filt_sizes[l], padding=1), nn.ReLU())
+            conv = nn.Sequential(nn.Conv2d(self.R_stack_sizes[l], self.stack_sizes[l], self.Ahat_filt_sizes[l], padding=1), nn.ReLU())
             setattr(self, 'conv_ahat{}'.format(l), conv)
 
-            if(l<self.nb_layers - 1):
+            if l < self.nb_layers - 1:
                 conv = nn.Sequential(nn.Conv2d(2*self.stack_sizes[l], self.stack_sizes[l+1], self.A_filt_sizes[l], padding=1), nn.ReLU())
                 setattr(self, 'conv_a{}'.format(l), conv)
-
             width, height = width//2, height//2;
 
         self.upsample = nn.Upsample(scale_factor=2)
@@ -146,7 +194,7 @@ class Model(nn.Module):
 
         for l in range(self.nb_layers):
 
-            # if self.layer_type[l] == "TAAConvLSTM":
+            # if self.layer_list[l] == "TAAConvLSTM":
             #     cell = getattr(self, 'cell{}'.format(l))
             #     cell.init_hidden(batch_size=batch_size, hidden=self.R_stack_sizes[l],
             #                                                      shape=(h, w))
@@ -184,13 +232,13 @@ class Model(nn.Module):
                     tmpPredNet = torch.cat((Rep, Error, self.upsample(RepVec[l+1])), 1)
                     tmpAtt = torch.cat((Error, self.upsample(RepVec[l+1])), 1)
 
-                if self.layer_type[l] == "ConvLSTM":
+                if self.layer_list[l] == "ConvLSTM":
                     Rep, Cell = cell(tmpPredNet, Cell)
-                elif self.layer_type[l] == "TAAConvLSTM":
+                elif self.layer_list[l] == "TAAConvLSTM":
                     His = self.return_history(History, l)
                     Rep, Cell = cell(tmpAtt, Rep, Cell, His)
                     History[l].append(Rep)
-                elif self.layer_type[l] == "SAAConvLSTM":
+                elif self.layer_list[l] == "SAAConvLSTM":
                     Rep, Cell = cell(tmpAtt, Rep, Cell)
                 else:
                     print("Error. Layer type not recognized.")
