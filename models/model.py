@@ -6,9 +6,9 @@ import torch.nn as nn
 
 from torch.nn import functional as F
 from torch.autograd import Variable
-from model.ConvLSTMCell import ConvLSTMCell
-from model.TAAConvLSTMCell import TAAConvLSTMCell
-from model.SAAConvLSTMCell import SAAConvLSTMCell
+from model import ConvLSTMCell
+from model import TAAConvLSTMCell
+from model import SAAConvLSTMCell
 
 class Model(nn.Module):
     def __init__(self, 
@@ -72,7 +72,7 @@ class Model(nn.Module):
         self.extrap_start_time = extrap_start_time  # None
         # extrap_start_time: time step for which model will start extrapolating.
         #         Starting at this time step, the prediction from the previous time step will be treated as the "actual".
-        # 模型将开始外推的时间点。从这个时间步开始，上一个时间步的predictions将被视为“实际”。
+        # 模型将开始外推的时间点。从这个时间步开始，上一个时间步的, predictions将被视为“实际”。
         self.num_past_frames = num_past_frames   #  4
         #  num_past_frames: number of past frames in the attention calculation (not used, for compatibility with TAAConvLSTM).
         #  attention 计算中过去的帧数（！！！！！！！！！不使用，为了与TAAConvLSTM兼容）。
@@ -108,60 +108,60 @@ class Model(nn.Module):
             if l < self.nb_layers - 1:  # layer没添加完
                 if self.layer_list[l] == 'ConvLSTM':
                     cell = ConvLSTMCell(3*self.stack_sizes[l]+self.R_stack_sizes[l+1], 
-                    self.R_stack_sizes[l], 
-                    self.R_filt_sizes[l])
+                                        self.R_stack_sizes[l], 
+                                        self.R_filt_sizes[l])
                     setattr(self, 'cell{}'.format(l), cell)
                 elif self.layer_list[l] == 'TAAConvLSTM':
                     cell = TAAConvLSTMCell(2*self.stack_sizes[l]+self.R_stack_sizes[l+1], 
-                    self.R_stack_sizes[l], 
-                    self.R_filt_sizes[l],
-                    self.num_past_frames, 
-                    self.dk, self.dv, self.Nh, 
-                    width, height, 
-                    self.attention_input_mode,
-                    self.positional_encoding, 
-                    self.forget_bias)
+                                            self.R_stack_sizes[l], 
+                                            self.R_filt_sizes[l],
+                                            self.num_past_frames, 
+                                            self.dk, self.dv, self.Nh, 
+                                            width, height, 
+                                            self.attention_input_mode,
+                                            self.positional_encoding, 
+                                            self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 elif self.layer_list[l] == 'SAAConvLSTM':
                     cell = SAAConvLSTMCell(2*self.stack_sizes[l]+self.R_stack_sizes[l+1],
-                     self.R_stack_sizes[l], 
-                     self.R_filt_sizes[l],
-                     self.num_past_frames, 
-                     self.dk, self.dv, self.Nh, 
-                     width, height, 
-                     self.attention_input_mode,
-                     self.positional_encoding, 
-                     self.forget_bias)
+                                            self.R_stack_sizes[l], 
+                                            self.R_filt_sizes[l],
+                                            self.num_past_frames, 
+                                            self.dk, self.dv, self.Nh, 
+                                            width, height, 
+                                            self.attention_input_mode,
+                                            self.positional_encoding, 
+                                            self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 else:
                     print("Error. Layer type not recognized.")
             else: #l==self.nb_layers
                 if self.layer_list[l] == 'ConvLSTM':
                     cell = ConvLSTMCell(3*self.stack_sizes[l], 
-                    self.R_stack_sizes[l], 
-                    self.R_filt_sizes[l])
+                                        self.R_stack_sizes[l], 
+                                        self.R_filt_sizes[l])
                     setattr(self, 'cell{}'.format(l), cell)
                 elif self.layer_list[l] == 'TAAConvLSTM':
                     cell = TAAConvLSTMCell(2*self.stack_sizes[l], 
-                    self.R_stack_sizes[l], 
-                    self.R_filt_sizes[l],
-                    self.num_past_frames, 
-                    self.dk, self.dv, self.Nh, 
-                    width, height,
-                    self.attention_input_mode, 
-                    self.positional_encoding, 
-                    self.forget_bias)
+                                            self.R_stack_sizes[l], 
+                                            self.R_filt_sizes[l],
+                                            self.num_past_frames, 
+                                            self.dk, self.dv, self.Nh, 
+                                            width, height,
+                                            self.attention_input_mode, 
+                                            self.positional_encoding, 
+                                            self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 elif self.layer_list[l] == 'SAAConvLSTM':
                     cell = SAAConvLSTMCell(2*self.stack_sizes[l], 
-                    self.R_stack_sizes[l], 
-                    self.R_filt_sizes[l],
-                    self.num_past_frames, 
-                    self.dk, self.dv, self.Nh, 
-                    width, height,
-                    self.attention_input_mode, 
-                    self.positional_encoding, 
-                    self.forget_bias)
+                                            self.R_stack_sizes[l], 
+                                            self.R_filt_sizes[l],
+                                            self.num_past_frames, 
+                                            self.dk, self.dv, self.Nh, 
+                                            width, height,
+                                            self.attention_input_mode, 
+                                            self.positional_encoding, 
+                                            self.forget_bias)
                     setattr(self, 'cell{}'.format(l), cell)
                 else:
                     print("Error. Layer type not recognized.")
@@ -272,6 +272,9 @@ class Model(nn.Module):
                 total_prediction.append(frame_prediction)
 
         if self.output_mode == 'error':
+            # torch.cat()对tensors沿指定维度拼接，但返回的Tensor的维数不会变 (torch.Size([2, 3]), torch.Size([2, 3]), torch.Size([4, 3]))
+            # torch.stack()同样是对tensors沿指定维度拼接，但返回的Tensor会多一维  (torch.Size([2, 3]), torch.Size([2, 3]), torch.Size([2, 2, 3]))
+
             return torch.stack(total_error, 2) # batch x n_layers x nt
         elif self.output_mode == 'prediction':
             return torch.stack(total_prediction, 1)

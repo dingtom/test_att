@@ -106,6 +106,7 @@ model = Model(layer_list=config["model"]["type_of_all_layers"],  #   [ConvLSTM, 
             Nh=config["model"]["Nh"],   # 4
             width=im_width,  # 128
             height=im_height,   # 128
+            # output_mode='prediction',
             positional_encoding=True, 
             forget_bias=1.0)
 
@@ -132,6 +133,8 @@ for epoch in range(nb_epoch):
             errors = errors.float()
             loc_batch = errors.size(0)
             errors = torch.mm(errors.view(-1, nt), time_loss_weights)
+            # torch.mul(a, b)是矩阵a和b对应位相乘，a和b的维度必须相等，比如a的维度是(1, 2)，b的维度是(1, 2)，返回的仍是(1, 2)的矩阵
+            # torch.mm(a, b)是矩阵a和b矩阵相乘，比如a的维度是(1, 2)，b的维度是(2, 3)，返回的就是(1, 3)的矩阵
             errors = torch.mm(errors.view(loc_batch, -1), layer_loss_weights)
             errors = torch.mean(errors)
             optimizer.zero_grad()

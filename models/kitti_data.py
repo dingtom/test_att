@@ -14,7 +14,7 @@ class KITTI(data.Dataset):
         self.mode = mode  
         cur_loc = 0
         possible_starts = []
-        while cur_loc < self.X.shape[0] - self.size + 1:
+        while cur_loc < self.X.shape[0]-self.size+1:
             if self.sources[cur_loc] == self.sources[cur_loc + self.size - 1]:
                 possible_starts.append(cur_loc)
                 if mode=='all':
